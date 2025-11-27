@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import tqdm as tdqm
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
@@ -40,9 +39,66 @@ class VegetableCNN(nn.Module):
 
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.fc1 = nn.Linear(64 * 28 * 28, 256)
+        with torch.no_grad():
+            dummy = torch.zeros(1, 3, 224, 224)
+            dummy_out = self._forward_conv(dummy)
+            self.flatten_dim = dummy_out.numel()
+
+        self.fc1 = nn.Linear(self.flatten_dim, 256)
+
         self.fc2 = nn.Linear(256, num_classes)
 
         self.dropout = nn.Dropout(p=0.3)
-
         
+    def _forward_conv(self, x):
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = self.pool(F.relu(self.conv3(x)))
+        return x
+    
+    def forward(self, x):
+        x = self._forward_conv(x)
+
+        x = x.view(x.size(0), -1)
+
+        x = self.dropout(F.relu(self.fc1(x)))
+        x = self.fc2(x)
+
+        return x
+
+model = VegetableCNN().to(device)
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+num_epochs = 10
+
+for epoch in range(num_epochs):
+    running_loss = 0.0
+    correct = 0
+    total = 0
+
+    model.train()
+    
+    for images, labels in train_loader:
+        images = images.to(device)
+        labels = labels.to(device)
+
+        optimizer.zero_grad()
+
+        outputs = model(images)
+
+        loss = criterion(outputs, labels)
+
+        loss.backward()
+
+        optimizer.step()
+
+        running_loss += loss.item()
+
+        _, predicted = torch.max(outputs, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
+
+    epoch_loss = running_loss / len(train_loader)
+    epoch_acc = 100 * correct / total
+
+    print(f"Epoch {epoch+1}/{num_epochs} | Loss: {epoch_loss:.4f} | Acc: {epoch_acc:.2f}%")
