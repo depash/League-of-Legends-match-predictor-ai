@@ -6,6 +6,9 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Step 1 make a tranfom that will be used to turn the images into vectores and it will resize,convert to tensor, then normalize
+
 transform = transforms.Compose([
     transforms.Resize((224,224)),
     transforms.ToTensor(),
@@ -15,6 +18,9 @@ transform = transforms.Compose([
     )
 ])
 
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Step 2 Pulls in the images and uses the prior tansform to turn the images into vectors
+
 train_data = datasets.ImageFolder(root='backend/data/train', transform=transform)
 val_data = datasets.ImageFolder(root='backend/data/validation', transform=transform)
 test_data = datasets.ImageFolder(root='backend/data/test', transform=transform)
@@ -23,11 +29,17 @@ train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
 val_loader   = DataLoader(val_data, batch_size=32, shuffle=False)
 test_loader  = DataLoader(test_data, batch_size=32, shuffle=False)
 
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Step 3 Sets up device to use the gpu if avalible and cuda then seeding if gpu is available so the resaults stay the same
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 torch.manual_seed(42)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(42)
+
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Step 4 Creating the model itself with what each layer does and how
 
 class VegetableCNN(nn.Module):
     def __init__(self, num_classes=15):
@@ -66,9 +78,16 @@ class VegetableCNN(nn.Module):
 
         return x
 
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Step 5 pulls model down and puts it in the cpu/gpu and determine what algorithm to use
+
 model = VegetableCNN().to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Step 6 detirmine how many loops you run through and pulling data and putting it into the model to train
+
 num_epochs = 10
 
 for epoch in range(num_epochs):
@@ -102,3 +121,39 @@ for epoch in range(num_epochs):
     epoch_acc = 100 * correct / total
 
     print(f"Epoch {epoch+1}/{num_epochs} | Loss: {epoch_loss:.4f} | Acc: {epoch_acc:.2f}%")
+
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Step 7 takes resaults from training and testing to see how accurate the model is using data the model hasn't seen
+
+model.eval()
+val_loss = 0.0
+val_correct = 0
+val_total = 0
+
+with torch.no_grad():
+    for images,labels in val_loader:
+        images = images.to(device)
+        labels = labels.to(device)
+
+        outputs = model(images)
+
+        loss = criterion(outputs, labels)
+
+        val_loss += loss.item()
+
+        _, predicted = torch.max(outputs, 1)
+
+        val_total += labels.size(0)
+
+        val_correct += (predicted == labels).sum().item()
+
+val_loss /= len(val_loader)
+
+val_acc = 100 * val_correct / val_total
+
+print(
+    f"Train Loss: {epoch_loss:.4f} | Train Acc: {epoch_acc:.2f}% | "
+    f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%"
+)
+
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
