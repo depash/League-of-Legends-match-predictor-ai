@@ -11,9 +11,22 @@ from torchvision import datasets, transforms
 
 transform = transforms.Compose([
     transforms.Resize((224,224)),
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomRotation(15),
+    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+    transforms.RandomResizedCrop(224, scale=(0.9, 1.0)),
     transforms.ToTensor(),
     transforms.Normalize(
         mean=[0.4688, 0.4635, 0.3434],
+        std=[0.2033, 0.2051, 0.1967]
+    )
+])
+
+test_val_transform = transforms.Compose([
+    transforms.Resize((224,224)),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.4688, 0.4635, 0.3434], 
         std=[0.2033, 0.2051, 0.1967]
     )
 ])
@@ -22,12 +35,10 @@ transform = transforms.Compose([
 # Step 2 Pulls in the images and uses the prior tansform to turn the images into vectors
 
 train_data = datasets.ImageFolder(root='backend/data/train', transform=transform)
-val_data = datasets.ImageFolder(root='backend/data/validation', transform=transform)
-test_data = datasets.ImageFolder(root='backend/data/test', transform=transform)
+val_data = datasets.ImageFolder(root='backend/data/validation', transform=test_val_transform)
 
-train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
-val_loader   = DataLoader(val_data, batch_size=32, shuffle=False)
-test_loader  = DataLoader(test_data, batch_size=32, shuffle=False)
+train_loader = DataLoader(train_data, batch_size=16, shuffle=True)
+val_loader   = DataLoader(val_data, batch_size=16, shuffle=False)
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # Step 3 Sets up device to use the gpu if avalible and cuda then seeding if gpu is available so the resaults stay the same
@@ -42,12 +53,22 @@ if torch.cuda.is_available():
 # Step 4 Creating the model itself with what each layer does and how
 
 class VegetableCNN(nn.Module):
-    def __init__(self, num_classes=15):
+    def __init__(self, num_classes=44, conv_dropout_p=0.1, fc_dropout_p=0.5):
         super(VegetableCNN, self).__init__()
 
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
+
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
+
+        self.conv4 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, padding=1)
+        self.bn4 = nn.BatchNorm2d(256)
+
+        self.conv_dropout = nn.Dropout2d(p=conv_dropout_p)
 
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
@@ -56,16 +77,39 @@ class VegetableCNN(nn.Module):
             dummy_out = self._forward_conv(dummy)
             self.flatten_dim = dummy_out.numel()
 
-        self.fc1 = nn.Linear(self.flatten_dim, 256)
+        self.fc1 = nn.Linear(self.flatten_dim, 512)
+        self.fc_bn1 = nn.BatchNorm1d(512)
 
-        self.fc2 = nn.Linear(256, num_classes)
+        self.fc2 = nn.Linear(512, 256)
+        self.fc_bn2 = nn.BatchNorm1d(256)
 
-        self.dropout = nn.Dropout(p=0.3)
+        self.fc_out = nn.Linear(256, num_classes)
+
+        self.fc_dropout = nn.Dropout(fc_dropout_p)
         
     def _forward_conv(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = self.pool(F.relu(self.conv3(x)))
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = F.relu(x)
+        x = self.pool(x)
+
+        x = self.conv2(x)
+        x = self.bn2(x)
+        x = F.relu(x)
+        x = self.pool(x)
+
+        x = self.conv3(x)
+        x = self.bn3(x)
+        x = F.relu(x)
+        x = self.conv_dropout(x)
+        x = self.pool(x)
+
+        x = self.conv4(x)
+        x = self.bn4(x)
+        x = F.relu(x)
+        x = self.conv_dropout(x)
+        x = self.pool(x)
+
         return x
     
     def forward(self, x):
@@ -73,9 +117,17 @@ class VegetableCNN(nn.Module):
 
         x = x.view(x.size(0), -1)
 
-        x = self.dropout(F.relu(self.fc1(x)))
-        x = self.fc2(x)
+        x = self.fc1(x)
+        x = self.fc_bn1(x)
+        x = F.relu(x)
+        x = self.fc_dropout(x)
 
+        x = self.fc2(x)
+        x = self.fc_bn2(x)
+        x = F.relu(x)
+        x = self.fc_dropout(x)
+
+        x = self.fc_out(x)
         return x
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -84,11 +136,12 @@ class VegetableCNN(nn.Module):
 model = VegetableCNN().to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # Step 6 detirmine how many loops you run through and pulling data and putting it into the model to train
 
-num_epochs = 10
+num_epochs = 20
 
 for epoch in range(num_epochs):
     running_loss = 0.0
@@ -116,6 +169,8 @@ for epoch in range(num_epochs):
         _, predicted = torch.max(outputs, 1)
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
+
+    scheduler.step()
 
     epoch_loss = running_loss / len(train_loader)
     epoch_acc = 100 * correct / total
@@ -157,3 +212,6 @@ print(
 )
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Step 8 Saveing trained data
+
+# torch.save(model.state_dict(), "fruit_vegetable_model.pth")
