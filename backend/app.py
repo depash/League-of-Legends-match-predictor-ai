@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
+import torchvision as models
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # Step 1 make a tranfom that will be used to turn the images into vectores and it will resize,convert to tensor, then normalize
@@ -17,17 +18,8 @@ transform = transforms.Compose([
     transforms.RandomResizedCrop(224, scale=(0.9, 1.0)),
     transforms.ToTensor(),
     transforms.Normalize(
-        mean=[0.4688, 0.4635, 0.3434],
-        std=[0.2033, 0.2051, 0.1967]
-    )
-])
-
-test_val_transform = transforms.Compose([
-    transforms.Resize((224,224)),
-    transforms.ToTensor(),
-    transforms.Normalize(
-        mean=[0.4688, 0.4635, 0.3434], 
-        std=[0.2033, 0.2051, 0.1967]
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
     )
 ])
 
@@ -35,7 +27,7 @@ test_val_transform = transforms.Compose([
 # Step 2 Pulls in the images and uses the prior tansform to turn the images into vectors
 
 train_data = datasets.ImageFolder(root='backend/data/train', transform=transform)
-val_data = datasets.ImageFolder(root='backend/data/validation', transform=test_val_transform)
+val_data = datasets.ImageFolder(root='backend/data/validation', transform=transform)
 
 train_loader = DataLoader(train_data, batch_size=16, shuffle=True)
 val_loader   = DataLoader(val_data, batch_size=16, shuffle=False)
@@ -53,82 +45,84 @@ if torch.cuda.is_available():
 # Step 4 Creating the model itself with what each layer does and how
 
 class VegetableCNN(nn.Module):
-    def __init__(self, num_classes=44, conv_dropout_p=0.1, fc_dropout_p=0.5):
+    def __init__(self, num_classes=44, conv_dropout_p=0.0, fc_dropout_p=0.5):
         super(VegetableCNN, self).__init__()
+        self.backbone = models.resnet18(weights="IMAGENET1K_V1")
+        self.backbone = nn.Linear(self.backbone.fc.in_features, num_classes)
 
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm2d(32)
+    #     self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, padding=1)
+    #     self.bn1 = nn.BatchNorm2d(32)
 
-        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(64)
+    #     self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
+    #     self.bn2 = nn.BatchNorm2d(64)
 
-        self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
-        self.bn3 = nn.BatchNorm2d(128)
+    #     self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
+    #     self.bn3 = nn.BatchNorm2d(128)
 
-        self.conv4 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, padding=1)
-        self.bn4 = nn.BatchNorm2d(256)
+    #     self.conv4 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, padding=1)
+    #     self.bn4 = nn.BatchNorm2d(256)
 
-        self.conv_dropout = nn.Dropout2d(p=conv_dropout_p)
+    #     self.conv_dropout = nn.Dropout2d(p=conv_dropout_p)
 
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+    #     self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        with torch.no_grad():
-            dummy = torch.zeros(1, 3, 224, 224)
-            dummy_out = self._forward_conv(dummy)
-            self.flatten_dim = dummy_out.numel()
+    #     with torch.no_grad():
+    #         dummy = torch.zeros(1, 3, 224, 224)
+    #         dummy_out = self._forward_conv(dummy)
+    #         self.flatten_dim = dummy_out.numel()
 
-        self.fc1 = nn.Linear(self.flatten_dim, 512)
-        self.fc_bn1 = nn.BatchNorm1d(512)
+    #     self.fc1 = nn.Linear(self.flatten_dim, 512)
+    #     self.fc_bn1 = nn.BatchNorm1d(512)
 
-        self.fc2 = nn.Linear(512, 256)
-        self.fc_bn2 = nn.BatchNorm1d(256)
+    #     self.fc2 = nn.Linear(512, 256)
+    #     self.fc_bn2 = nn.BatchNorm1d(256)
 
-        self.fc_out = nn.Linear(256, num_classes)
+    #     self.fc_out = nn.Linear(256, num_classes)
 
-        self.fc_dropout = nn.Dropout(fc_dropout_p)
+    #     self.fc_dropout = nn.Dropout(fc_dropout_p)
         
-    def _forward_conv(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = F.relu(x)
-        x = self.pool(x)
+    # def _forward_conv(self, x):
+    #     x = self.conv1(x)
+    #     x = self.bn1(x)
+    #     x = F.relu(x)
+    #     x = self.pool(x)
 
-        x = self.conv2(x)
-        x = self.bn2(x)
-        x = F.relu(x)
-        x = self.pool(x)
+    #     x = self.conv2(x)
+    #     x = self.bn2(x)
+    #     x = F.relu(x)
+    #     x = self.pool(x)
 
-        x = self.conv3(x)
-        x = self.bn3(x)
-        x = F.relu(x)
-        x = self.conv_dropout(x)
-        x = self.pool(x)
+    #     x = self.conv3(x)
+    #     x = self.bn3(x)
+    #     x = F.relu(x)
+    #     x = self.conv_dropout(x)
+    #     x = self.pool(x)
 
-        x = self.conv4(x)
-        x = self.bn4(x)
-        x = F.relu(x)
-        x = self.conv_dropout(x)
-        x = self.pool(x)
+    #     x = self.conv4(x)
+    #     x = self.bn4(x)
+    #     x = F.relu(x)
+    #     x = self.conv_dropout(x)
+    #     x = self.pool(x)
 
-        return x
+    #     return x
     
-    def forward(self, x):
-        x = self._forward_conv(x)
+    # def forward(self, x):
+    #     x = self._forward_conv(x)
 
-        x = x.view(x.size(0), -1)
+    #     x = x.view(x.size(0), -1)
 
-        x = self.fc1(x)
-        x = self.fc_bn1(x)
-        x = F.relu(x)
-        x = self.fc_dropout(x)
+    #     x = self.fc1(x)
+    #     x = self.fc_bn1(x)
+    #     x = F.relu(x)
+    #     x = self.fc_dropout(x)
 
-        x = self.fc2(x)
-        x = self.fc_bn2(x)
-        x = F.relu(x)
-        x = self.fc_dropout(x)
+    #     x = self.fc2(x)
+    #     x = self.fc_bn2(x)
+    #     x = F.relu(x)
+    #     x = self.fc_dropout(x)
 
-        x = self.fc_out(x)
-        return x
+    #     x = self.fc_out(x)
+    #     return self.backbone(x)
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # Step 5 pulls model down and puts it in the cpu/gpu and determine what algorithm to use
